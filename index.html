@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FQC ERA - QR Scanner</title>
+
   <style>
     * { box-sizing: border-box; }
     body {
@@ -23,23 +24,14 @@
       border-radius: 16px;
       box-shadow: 0 4px 18px rgba(0,0,0,.08);
     }
-    h1 {
-      margin: 0 0 8px;
-      text-align: center;
-      font-size: 25px;
-    }
+    h1 { margin: 0 0 8px; text-align: center; font-size: 25px; }
     .subtitle {
       margin-bottom: 22px;
       text-align: center;
       color: #687385;
       font-size: 14px;
     }
-    label {
-      display: block;
-      margin: 16px 0 7px;
-      font-weight: bold;
-      font-size: 14px;
-    }
+    label { display: block; margin: 16px 0 7px; font-weight: bold; font-size: 14px; }
     input {
       width: 100%;
       padding: 13px;
@@ -60,17 +52,9 @@
       font-weight: bold;
       cursor: pointer;
     }
-    button:disabled {
-      opacity: .6;
-      cursor: not-allowed;
-    }
+    button:disabled { opacity: .6; cursor: not-allowed; }
     .secondary { background: #455468; }
-    #reader {
-      width: 100%;
-      margin-top: 15px;
-      overflow: hidden;
-      border-radius: 10px;
-    }
+    #reader { width: 100%; margin-top: 15px; overflow: hidden; border-radius: 10px; }
     #message {
       display: none;
       margin-top: 16px;
@@ -82,225 +66,206 @@
       line-height: 1.5;
       overflow-wrap: anywhere;
     }
-    #message.error {
-      background: #feecec;
-      color: #b42318;
-    }
-    .hint {
-      margin-top: 10px;
-      color: #687385;
-      font-size: 13px;
-      line-height: 1.5;
-    }
+    #message.error { background: #feecec; color: #b42318; }
+    .hint { margin-top: 10px; color: #687385; font-size: 13px; line-height: 1.5; }
   </style>
 </head>
+
 <body>
-  <main class="container">
-    <h1>FQC ERA</h1>
-    <div class="subtitle">Quét QR để truy xuất thông tin kiểm tra</div>
+<main class="container">
+  <h1>FQC ERA</h1>
+  <div class="subtitle">Quét QR để truy xuất thông tin kiểm tra</div>
 
-    <label for="qrInput">Nội dung QR</label>
-    <input
-      id="qrInput"
-      type="text"
-      placeholder="Quét QR hoặc nhập mã thủ công"
-      autocomplete="off"
-    >
+  <label for="qrInput">Nội dung QR</label>
+  <input id="qrInput" type="text" placeholder="Quét QR hoặc nhập mã thủ công" autocomplete="off">
 
-    <button id="startButton" onclick="startScanner()">
-      Mở camera và quét QR
-    </button>
+  <button id="startButton" onclick="startScanner()">Mở camera và quét QR</button>
+  <button id="stopButton" class="secondary" onclick="stopScanner()" style="display:none">Tắt camera</button>
 
-    <button
-      id="stopButton"
-      class="secondary"
-      onclick="stopScanner()"
-      style="display:none"
-    >
-      Tắt camera
-    </button>
+  <div id="reader"></div>
 
-    <div id="reader"></div>
+  <div class="hint">
+    Nếu camera không mở, hãy cấp quyền camera cho trình duyệt.
+    Có thể nhập mã QR thủ công nếu cần.
+  </div>
 
-    <div class="hint">
-      Hỗ trợ Chrome và Safari. Nếu camera không mở, hãy kiểm tra quyền camera
-      hoặc nhập mã QR thủ công.
-    </div>
+  <button onclick="continueToFQC()">Tiếp tục đến FQC Record</button>
+  <div id="message" role="status" aria-live="polite"></div>
+</main>
 
-    <button onclick="continueToFQC()">
-      Tiếp tục đến FQC Record
-    </button>
+<script>
+  const FQC_APP_URL =
+    'https://script.google.com/macros/s/AKfycbzGxSNP10GY-k9BkBIyqGPSnIQ6m0AlMzzhC5AEDV7MIFASSJqXuJzN1VxdkaC4Rzl7bQ/exec';
 
-    <div id="message" role="status" aria-live="polite"></div>
-  </main>
+  const QR_SOURCES = [
+    './html5-qrcode.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js',
+    'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js'
+  ];
 
-  <script>
-    const FQC_APP_URL =
-      'https://script.google.com/macros/s/AKfycbzGxSNP10GY-k9BkBIyqGPSnIQ6m0AlMzzhC5AEDV7MIFASSJqXuJzN1VxdkaC4Rzl7bQ/exec';
+  let scanner = null;
+  let scanning = false;
+  let starting = false;
+  let handledQR = false;
 
-    const QR_SOURCES = [
-      './html5-qrcode.min.js',
-      'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js',
-      'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js',
-      'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'
-    ];
+  const qrInput = document.getElementById('qrInput');
+  const startButton = document.getElementById('startButton');
+  const stopButton = document.getElementById('stopButton');
+  const messageBox = document.getElementById('message');
 
-    let scanner = null;
-    let scanning = false;
-    let starting = false;
-    let handledQR = false;
-    let libraryPromise = null;
+  function showMessage(message, isError = false) {
+    messageBox.textContent = message;
+    messageBox.className = isError ? 'error' : '';
+    messageBox.style.display = 'block';
+  }
 
-    const qrInput = document.getElementById('qrInput');
-    const startButton = document.getElementById('startButton');
-    const stopButton = document.getElementById('stopButton');
-    const messageBox = document.getElementById('message');
+  function loadQrLibrary() {
+    if (typeof Html5Qrcode !== 'undefined') return Promise.resolve(true);
 
-    function showMessage(message, isError = false) {
-      messageBox.replaceChildren();
-      messageBox.textContent = message;
-      messageBox.className = isError ? 'error' : '';
-      messageBox.style.display = 'block';
-    }
+    return new Promise(resolve => {
+      let index = 0;
 
-    function loadQrLibrary() {
-      if (typeof Html5Qrcode !== 'undefined') {
-        return Promise.resolve(true);
-      }
-      if (libraryPromise) return libraryPromise;
-
-      libraryPromise = (async function() {
-        for (const source of QR_SOURCES) {
-          const loaded = await new Promise(resolve => {
-            const script = document.createElement('script');
-            script.src = source;
-            script.async = true;
-            script.onload = () => {
-              const ok = typeof Html5Qrcode !== 'undefined';
-              if (!ok) script.remove();
-              resolve(ok);
-            };
-            script.onerror = () => {
-              script.remove();
-              resolve(false);
-            };
-            document.head.appendChild(script);
-          });
-
-          if (loaded) return true;
-        }
-        return typeof Html5Qrcode !== 'undefined';
-      })();
-
-      return libraryPromise;
-    }
-
-    async function startScanner() {
-      if (starting || scanning) return;
-
-      starting = true;
-      startButton.disabled = true;
-      handledQR = false;
-
-      try {
-        showMessage('Đang tải thư viện quét QR...');
-
-        const ready = await loadQrLibrary();
-        if (!ready) {
-          throw new Error(
-            'Không tải được thư viện QR. Kiểm tra file trên GitHub Pages.'
-          );
+      function tryNext() {
+        if (typeof Html5Qrcode !== 'undefined') {
+          resolve(true);
+          return;
         }
 
-        if (!scanner) scanner = new Html5Qrcode('reader');
+        if (index >= QR_SOURCES.length) {
+          resolve(false);
+          return;
+        }
 
-        showMessage('Đang mở camera...');
-
-        await scanner.start(
-          { facingMode: 'environment' },
-          {
-            fps: 10,
-            qrbox: function(width, height) {
-              const size = Math.floor(Math.min(width, height) * 0.75);
-              return { width: size, height: size };
-            }
-          },
-          async function(decodedText) {
-            if (handledQR) return;
-            handledQR = true;
-
-            qrInput.value = decodedText;
-            showMessage('Quét thành công! Đang mở FQC Record...');
-
-            try {
-              if (scanner && scanning) {
-                await scanner.stop();
-                scanning = false;
-              }
-            } catch (e) {
-              console.warn('Không dừng được camera:', e);
-            }
-
-            stopButton.style.display = 'none';
-
-            const target =
-              FQC_APP_URL + '?qr=' + encodeURIComponent(decodedText);
-
-            // Tự chuyển sang FQC Record trong cùng tab.
-            window.location.assign(target);
-          },
-          function() {}
-        );
-
-        scanning = true;
-        stopButton.style.display = 'block';
-        showMessage('Camera đã mở. Đưa mã QR vào khung quét.');
-      } catch (error) {
-        scanning = false;
-        showMessage(
-          'Không mở được camera hoặc thư viện QR: ' +
-          (error.message || String(error)),
-          true
-        );
-      } finally {
-        starting = false;
-        startButton.disabled = false;
+        const script = document.createElement('script');
+        script.src = QR_SOURCES[index++];
+        script.onload = () => {
+          if (typeof Html5Qrcode !== 'undefined') {
+            resolve(true);
+          } else {
+            script.remove();
+            tryNext();
+          }
+        };
+        script.onerror = () => {
+          script.remove();
+          tryNext();
+        };
+        document.head.appendChild(script);
       }
+
+      tryNext();
+    });
+  }
+
+  async function startScanner() {
+    if (starting || scanning) return;
+
+    if (!window.isSecureContext) {
+      showMessage('Trang chưa chạy trong HTTPS. Hãy mở GitHub Pages bằng https://.', true);
+      return;
     }
 
-    async function stopScanner() {
-      if (!scanner || !scanning) {
-        stopButton.style.display = 'none';
-        return;
-      }
-      try {
-        await scanner.stop();
-      } catch (error) {
-        console.warn(error);
-      }
-      scanning = false;
-      stopButton.style.display = 'none';
-    }
+    starting = true;
+    startButton.disabled = true;
+    handledQR = false;
 
-    function continueToFQC() {
-      const qr = qrInput.value.trim();
-      if (!qr) {
-        showMessage('Vui lòng quét QR hoặc nhập mã QR trước.', true);
-        qrInput.focus();
-        return;
+    try {
+      showMessage('Đang tải thư viện quét QR...');
+
+      const ready = await loadQrLibrary();
+      if (!ready) {
+        throw new Error('Không tải được thư viện QR. Kiểm tra file html5-qrcode.min.js trong GitHub.');
       }
-      window.location.assign(
-        FQC_APP_URL + '?qr=' + encodeURIComponent(qr)
+
+      scanner = new Html5Qrcode('reader');
+
+      showMessage('Đang yêu cầu quyền camera...');
+
+      await scanner.start(
+        { facingMode: 'environment' },
+        {
+          fps: 10,
+          qrbox: function(width, height) {
+            const size = Math.floor(Math.min(width, height) * 0.75);
+            return { width: size, height: size };
+          }
+        },
+        async function(decodedText) {
+          if (handledQR) return;
+          handledQR = true;
+
+          qrInput.value = decodedText;
+          showMessage('Quét thành công. Đang chuyển sang FQC Record...');
+
+          try {
+            if (scanner && scanning) await scanner.stop();
+          } catch (e) {}
+
+          scanning = false;
+          stopButton.style.display = 'none';
+
+          const target = FQC_APP_URL + '?qr=' + encodeURIComponent(decodedText);
+          window.location.href = target;
+        },
+        function() {}
       );
+
+      scanning = true;
+      stopButton.style.display = 'block';
+      showMessage('Camera đã mở. Đưa mã QR vào khung quét.');
+
+    } catch (error) {
+      scanning = false;
+      const detail = error && error.message ? error.message : String(error);
+
+      if (detail.toLowerCase().includes('permission') ||
+          detail.toLowerCase().includes('notallowed')) {
+        showMessage('Trình duyệt chưa cấp quyền camera. Hãy bật quyền Camera cho GitHub Pages rồi tải lại trang.', true);
+      } else {
+        showMessage('Không mở được camera: ' + detail, true);
+      }
+    } finally {
+      starting = false;
+      startButton.disabled = false;
+    }
+  }
+
+  async function stopScanner() {
+    if (!scanner) return;
+
+    try {
+      if (scanning) await scanner.stop();
+    } catch (e) {}
+
+    try {
+      await scanner.clear();
+    } catch (e) {}
+
+    scanner = null;
+    scanning = false;
+    stopButton.style.display = 'none';
+    showMessage('Đã tắt camera.');
+  }
+
+  function continueToFQC() {
+    const qr = qrInput.value.trim();
+
+    if (!qr) {
+      showMessage('Vui lòng quét QR hoặc nhập mã QR trước.', true);
+      qrInput.focus();
+      return;
     }
 
-    // Hỗ trợ URL có sẵn tham số QR.
-    const params = new URLSearchParams(window.location.search);
-    const receivedQR = params.get('qr');
-    if (receivedQR) {
-      qrInput.value = receivedQR;
-      showMessage('Đã nhận mã QR. Đang chuẩn bị FQC Record...');
-    }
-  </script>
+    window.location.href = FQC_APP_URL + '?qr=' + encodeURIComponent(qr);
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const receivedQR = params.get('qr');
+
+  if (receivedQR) {
+    qrInput.value = receivedQR;
+    showMessage('Đã nhận mã QR.');
+  }
+</script>
 </body>
 </html>
