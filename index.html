@@ -1,13 +1,15 @@
-
 <!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FQC ERA - QR Scanner</title>
+
   <script src="https://unpkg.com/html5-qrcode"></script>
+
   <style>
     * { box-sizing: border-box; }
+
     body {
       margin: 0;
       padding: 20px;
@@ -15,6 +17,7 @@
       background: #f1f5f3;
       color: #24332c;
     }
+
     main {
       max-width: 480px;
       margin: auto;
@@ -23,8 +26,14 @@
       border-radius: 18px;
       box-shadow: 0 3px 16px #0001;
     }
-    h2 { text-align: center; color: #176b50; }
+
+    h2 {
+      text-align: center;
+      color: #176b50;
+    }
+
     p { line-height: 1.5; }
+
     button {
       width: 100%;
       border: 0;
@@ -37,8 +46,19 @@
       background: #176b50;
       color: white;
     }
-    button.secondary { background: #e8efeb; color: #176b50; }
+
+    button.secondary {
+      background: #e8efeb;
+      color: #176b50;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     #reader { margin-top: 14px; }
+
     #result {
       background: #f1f5f3;
       border-radius: 10px;
@@ -46,17 +66,26 @@
       overflow-wrap: anywhere;
       min-height: 44px;
     }
-    .hint { font-size: 13px; color: #66736b; }
+
+    .hint {
+      font-size: 13px;
+      color: #66736b;
+    }
   </style>
 </head>
+
 <body>
 <main>
   <h2>FQC ERA</h2>
-  <p style="text-align:center">Quét mã QR để kiểm tra FQC</p>
+
+  <p style="text-align:center">
+    Quét mã QR để kiểm tra FQC
+  </p>
 
   <button id="startBtn" onclick="startScanner()">
     Mở camera và quét QR
   </button>
+
   <button class="secondary" onclick="openManual()">
     Nhập mã QR thủ công
   </button>
@@ -66,83 +95,119 @@
   <p><b>Nội dung mã QR:</b></p>
   <div id="result">Chưa quét mã</div>
 
-  <button id="continueBtn" onclick="continueToFQC()" disabled>
+  <button id="continueBtn"
+          onclick="continueToFQC()"
+          disabled>
     Tiếp tục đến FQC record
   </button>
 
   <p id="message" class="hint">
-    Cho phép trình duyệt sử dụng camera khi được hỏi.
+    Nhấn Mở camera và quét QR, sau đó cho phép truy cập camera.
   </p>
 </main>
 
-
 <script>
+  // URL Web App Apps Script của m
   const FQC_APP_URL =
     'https://script.google.com/macros/s/AKfycbzGxSNP10GY-k9BkBIyqGPSnIQ6m0AlMzzhC5AEDV7MIFASSJqXuJzN1VxdkaC4Rzl7bQ/exec';
-</script>
-
 
   let scanner = null;
   let scannedText = '';
+  let isProcessing = false;
 
   function setMessage(text) {
     document.getElementById('message').textContent = text;
   }
 
   async function startScanner() {
+    if (isProcessing) return;
+
     if (!window.isSecureContext) {
-      setMessage('Trang chưa ở ngữ cảnh HTTPS an toàn. Hãy kiểm tra URL GitHub Pages.');
+      setMessage('Vui lòng mở website bằng HTTPS.');
       return;
     }
 
     if (!navigator.mediaDevices ||
         !navigator.mediaDevices.getUserMedia) {
-      setMessage('Trình duyệt không hỗ trợ camera. Hãy mở trang bằng Chrome hoặc Safari.');
+      setMessage(
+        'Trình duyệt không hỗ trợ camera. Hãy mở bằng Chrome hoặc Safari.'
+      );
+      return;
+    }
+
+    if (typeof Html5Qrcode === 'undefined') {
+      setMessage(
+        'Không tải được thư viện quét QR. Hãy kiểm tra kết nối Internet và tải lại trang.'
+      );
       return;
     }
 
     try {
-      if (!scanner) scanner = new Html5Qrcode('reader');
+      if (!scanner) {
+        scanner = new Html5Qrcode('reader');
+      }
 
       document.getElementById('startBtn').disabled = true;
       setMessage('Đang mở camera...');
 
       await scanner.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 }
+        },
         async function(decodedText) {
-          scannedText = decodedText;
-          document.getElementById('result').textContent = decodedText;
+          if (isProcessing) return;
+          isProcessing = true;
+
+          scannedText = decodedText.trim();
+
+          document.getElementById('result').textContent =
+            scannedText;
+
           document.getElementById('continueBtn').disabled = false;
-          setMessage('Đọc QR thành công. Nhấn Tiếp tục để sang FQC record.');
+
+          setMessage(
+            'Đã đọc QR thành công. Nhấn Tiếp tục để sang FQC record.'
+          );
 
           try {
             await scanner.stop();
-          } catch (e) {}
+          } catch (e) {
+            // Camera có thể đã tự dừng.
+          }
 
           document.getElementById('startBtn').disabled = false;
         },
-        function() {}
+        function(errorMessage) {
+          // Bỏ qua lỗi đọc QR trong lúc camera đang quét.
+        }
       );
 
       setMessage('Đưa mã QR vào trong khung camera.');
     } catch (error) {
       document.getElementById('startBtn').disabled = false;
+
       setMessage(
         'Không mở được camera: ' +
-        (error.message || error) +
-        '. Hãy kiểm tra quyền camera hoặc nhập mã thủ công.'
+        (error.message || String(error)) +
+        '. Hãy cấp quyền camera hoặc nhập mã thủ công.'
       );
     }
   }
 
   function openManual() {
     const value = prompt('Nhập chính xác nội dung mã QR:');
+
     if (value && value.trim()) {
       scannedText = value.trim();
+
       document.getElementById('result').textContent = scannedText;
       document.getElementById('continueBtn').disabled = false;
-      setMessage('Đã nhập mã. Nhấn Tiếp tục để sang FQC record.');
+
+      setMessage(
+        'Đã nhập mã. Nhấn Tiếp tục để sang FQC record.'
+      );
     }
   }
 
@@ -154,15 +219,9 @@
 
     if (!FQC_APP_URL.startsWith('https://') ||
         !FQC_APP_URL.includes('/exec')) {
-      setMessage('Bạn chưa điền đúng URL web app FQC record trong code.');
+      setMessage('URL Web App FQC record không hợp lệ.');
       return;
     }
 
     const target = FQC_APP_URL +
       '?qr=' + encodeURIComponent(scannedText);
-
-    window.location.href = target;
-  }
-</script>
-</body>
-</html>
