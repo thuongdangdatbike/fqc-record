@@ -22,7 +22,7 @@
       max-width: 520px;
       margin: 0 auto;
       padding: 22px;
-      background: white;
+      background: #fff;
       border-radius: 16px;
       box-shadow: 0 4px 18px rgba(0,0,0,.08);
     }
@@ -34,17 +34,17 @@
     }
 
     .subtitle {
-      margin-bottom: 22px;
       text-align: center;
       color: #687385;
       font-size: 14px;
+      margin-bottom: 22px;
     }
 
     label {
       display: block;
       margin: 16px 0 7px;
-      font-size: 14px;
       font-weight: bold;
+      font-size: 14px;
     }
 
     input {
@@ -72,7 +72,7 @@
     }
 
     button:disabled {
-      background: #aab3c0;
+      opacity: .6;
       cursor: not-allowed;
     }
 
@@ -125,13 +125,12 @@
       autocomplete="off"
     >
 
-    <button id="startButton" type="button" onclick="startScanner()">
+    <button id="startButton" onclick="startScanner()">
       Mở camera và quét QR
     </button>
 
     <button
       id="stopButton"
-      type="button"
       class="secondary"
       onclick="stopScanner()"
       style="display:none"
@@ -142,66 +141,111 @@
     <div id="reader"></div>
 
     <div class="hint">
-      Nếu camera không hoạt động, hãy nhập QR thủ công. Nếu mở trang từ
-      Zalo hoặc Messenger, hãy thử mở trang bằng Chrome hoặc Safari.
+      Hỗ trợ Google Chrome và Safari. Nếu mở qua Zalo hoặc Messenger,
+      hãy thử mở trang bằng trình duyệt bên ngoài. Nếu camera không hoạt động,
+      m có thể nhập QR thủ công.
     </div>
 
-    <button
-      id="continueButton"
-      type="button"
-      class="green"
-      onclick="continueToFQC()"
-    >
+    <button class="green" onclick="continueToFQC()">
       Tiếp tục đến FQC Record
     </button>
 
     <div id="message" role="status" aria-live="polite"></div>
   </main>
 
-  <!-- File này phải được tải lên GitHub cùng cấp với index.html -->
-  <script src="./html5-qrcode.min.js"></script>
-
   <script>
     const FQC_APP_URL =
       'https://script.google.com/macros/s/AKfycbzGxSNP10GY-k9BkBIyqGPSnIQ6m0AlMzzhC5AEDV7MIFASSJqXuJzN1VxdkaC4Rzl7bQ/exec';
+
+    const QR_SOURCES = [
+      './html5-qrcode.min.js',
+      'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js',
+      'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js',
+      'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'
+    ];
 
     let scanner = null;
     let scanning = false;
     let starting = false;
     let handledQR = false;
+    let libraryPromise = null;
 
     const qrInput = document.getElementById('qrInput');
     const startButton = document.getElementById('startButton');
     const stopButton = document.getElementById('stopButton');
-    const continueButton = document.getElementById('continueButton');
     const messageBox = document.getElementById('message');
 
-    function showMessage(message, isError = false) {
+    function showMessage(text, isError = false) {
       messageBox.replaceChildren();
-      messageBox.textContent = message;
+      messageBox.textContent = text;
       messageBox.className = isError ? 'error' : '';
       messageBox.style.display = 'block';
+    }
+
+    function loadQrLibrary() {
+      if (typeof Html5Qrcode !== 'undefined') {
+        return Promise.resolve(true);
+      }
+
+      if (libraryPromise) return libraryPromise;
+
+      libraryPromise = (async function() {
+        for (const source of QR_SOURCES) {
+          try {
+            const loaded = await new Promise(resolve => {
+              const script = document.createElement('script');
+              script.src = source;
+              script.async = true;
+
+              script.onload = () => {
+                const ok = typeof Html5Qrcode !== 'undefined';
+                if (!ok) script.remove();
+                resolve(ok);
+              };
+
+              script.onerror = () => {
+                script.remove();
+                resolve(false);
+              };
+
+              document.head.appendChild(script);
+            });
+
+            if (loaded) return true;
+          } catch (error) {
+            console.warn('Không tải được thư viện:', source, error);
+          }
+        }
+
+        return typeof Html5Qrcode !== 'undefined';
+      })();
+
+      return libraryPromise;
     }
 
     async function startScanner() {
       if (starting || scanning) return;
 
-      if (typeof Html5Qrcode === 'undefined') {
-        showMessage(
-          'Không tải được thư viện QR. Kiểm tra file html5-qrcode.min.js trên GitHub.',
-          true
-        );
-        return;
-      }
-
       starting = true;
       startButton.disabled = true;
       handledQR = false;
+      showMessage('Đang tải thư viện quét QR...');
 
       try {
+        const ready = await loadQrLibrary();
+
+        if (!ready) {
+          throw new Error(
+            'Không tải được thư viện từ các nguồn. ' +
+            'Kiểm tra file html5-qrcode.min.js trên GitHub Pages.'
+          );
+        }
+
         if (!scanner) {
           scanner = new Html5Qrcode('reader');
         }
+
+        showMessage('Đang yêu cầu quyền sử dụng camera...');
 
         await scanner.start(
           { facingMode: 'environment' },
@@ -218,14 +262,12 @@
             handledQR = true;
             qrInput.value = decodedText;
             showMessage(
-              'Quét QR thành công. Nhấn "Tiếp tục đến FQC Record" để mở trang kiểm tra.'
+              'Quét QR thành công. Nhấn Tiếp tục đến FQC Record.'
             );
 
             await stopScanner();
           },
-          function() {
-            // Bỏ qua lỗi nhận diện trong lúc camera đang quét.
-          }
+          function() {}
         );
 
         scanning = true;
@@ -233,14 +275,13 @@
         showMessage('Camera đã mở. Đưa mã QR vào khung quét.');
       } catch (error) {
         scanning = false;
-
         const detail = error && error.message
           ? error.message
-          : String(error || 'Không xác định');
+          : String(error);
 
         showMessage(
-          'Không mở được camera. Kiểm tra quyền camera và thử Chrome/Safari. Chi tiết: ' +
-          detail,
+          'Không mở được camera hoặc thư viện QR. ' + detail +
+          ' Hãy dùng HTTPS, cho phép camera và thử Chrome/Safari.',
           true
         );
       } finally {
@@ -257,11 +298,12 @@
 
       try {
         await scanner.stop();
+        scanning = false;
       } catch (error) {
         console.warn('Lỗi khi dừng camera:', error);
+        scanning = false;
       }
 
-      scanning = false;
       stopButton.style.display = 'none';
     }
 
@@ -276,10 +318,7 @@
 
       const target = FQC_APP_URL + '?qr=' + encodeURIComponent(qr);
 
-      // Dùng link để người dùng chủ động mở FQC Record.
-      showMessage(
-        'Mã QR đã sẵn sàng. Nhấn nút bên dưới để mở FQC Record.'
-      );
+      showMessage('Mã QR đã sẵn sàng. Nhấn nút bên dưới để mở FQC Record.');
 
       const link = document.createElement('a');
       link.href = target;
@@ -289,16 +328,14 @@
       link.textContent = 'MỞ FQC RECORD';
 
       messageBox.appendChild(link);
-      link.focus();
     }
 
-    // Hỗ trợ trường hợp trang nhận QR qua URL.
     const params = new URLSearchParams(window.location.search);
     const receivedQR = params.get('qr');
 
     if (receivedQR) {
       qrInput.value = receivedQR;
-      showMessage('Đã nhận mã QR. Nhấn "Tiếp tục đến FQC Record".');
+      showMessage('Đã nhận mã QR. Nhấn Tiếp tục đến FQC Record.');
     }
   </script>
 </body>
