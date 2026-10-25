@@ -6,10 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FQC ERA - QR Scanner</title>
 
-  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode"></script>
-
   <style>
     * { box-sizing: border-box; }
+
     body {
       margin: 0;
       padding: 20px;
@@ -17,6 +16,7 @@
       background: #f1f5f3;
       color: #24332c;
     }
+
     main {
       max-width: 480px;
       margin: auto;
@@ -25,8 +25,11 @@
       border-radius: 18px;
       box-shadow: 0 3px 16px #0001;
     }
+
     h2 { text-align: center; color: #176b50; }
+
     p { line-height: 1.5; }
+
     button {
       width: 100%;
       border: 0;
@@ -39,15 +42,23 @@
       background: #176b50;
       color: white;
     }
+
     button.secondary {
       background: #e8efeb;
       color: #176b50;
     }
+
     button:disabled {
       opacity: .5;
       cursor: not-allowed;
     }
-    #reader { margin-top: 14px; }
+
+    #reader {
+      width: 100%;
+      margin-top: 14px;
+      overflow: hidden;
+    }
+
     #result {
       background: #f1f5f3;
       border-radius: 10px;
@@ -55,14 +66,22 @@
       overflow-wrap: anywhere;
       min-height: 44px;
     }
-    .hint { font-size: 13px; color: #66736b; }
+
+    .hint {
+      font-size: 13px;
+      color: #66736b;
+      overflow-wrap: anywhere;
+    }
   </style>
 </head>
 
 <body>
 <main>
   <h2>FQC ERA</h2>
-  <p style="text-align:center">Quét mã QR để kiểm tra FQC</p>
+
+  <p style="text-align:center">
+    Quét mã QR để kiểm tra FQC
+  </p>
 
   <button id="startBtn" type="button" onclick="startScanner()">
     Mở camera và quét QR
@@ -83,7 +102,7 @@
   </button>
 
   <p id="message" class="hint">
-    Nhấn Mở camera và cho phép truy cập camera khi trình duyệt hỏi.
+    Nhấn Mở camera và cấp quyền camera khi trình duyệt hỏi.
   </p>
 </main>
 
@@ -91,13 +110,76 @@
   const FQC_APP_URL =
     'https://script.google.com/macros/s/AKfycbzGxSNP10GY-k9BkBIyqGPSnIQ6m0AlMzzhC5AEDV7MIFASSJqXuJzN1VxdkaC4Rzl7bQ/exec';
 
+  const QR_LIBRARY_SOURCES = [
+    'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js',
+    'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js',
+    'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js'
+  ];
+
   let scanner = null;
   let scannedText = '';
   let isStarting = false;
   let isScanned = false;
+  let libraryPromise = null;
 
   function setMessage(text) {
     document.getElementById('message').textContent = text;
+  }
+
+  function loadQrLibrary() {
+    if (typeof Html5Qrcode !== 'undefined') {
+      return Promise.resolve();
+    }
+
+    if (libraryPromise) {
+      return libraryPromise;
+    }
+
+    libraryPromise = new Promise((resolve, reject) => {
+      let index = 0;
+
+      function tryNext() {
+        if (typeof Html5Qrcode !== 'undefined') {
+          resolve();
+          return;
+        }
+
+        if (index >= QR_LIBRARY_SOURCES.length) {
+          libraryPromise = null;
+          reject(new Error(
+            'Cả 3 nguồn thư viện đều không tải được. Hãy đổi mạng hoặc thử lại.'
+          ));
+          return;
+        }
+
+        const source = QR_LIBRARY_SOURCES[index++];
+        setMessage('Đang tải thư viện quét QR (' + index + '/3)...');
+
+        const script = document.createElement('script');
+        script.src = source;
+        script.async = true;
+
+        script.onload = () => {
+          if (typeof Html5Qrcode !== 'undefined') {
+            resolve();
+          } else {
+            script.remove();
+            tryNext();
+          }
+        };
+
+        script.onerror = () => {
+          script.remove();
+          tryNext();
+        };
+
+        document.head.appendChild(script);
+      }
+
+      tryNext();
+    });
+
+    return libraryPromise;
   }
 
   async function startScanner() {
@@ -111,27 +193,24 @@
     if (!navigator.mediaDevices ||
         !navigator.mediaDevices.getUserMedia) {
       setMessage(
-        'Trình duyệt không hỗ trợ camera. Hãy mở bằng Chrome hoặc Safari.'
+        'Trình duyệt không hỗ trợ camera. Hãy mở trang bằng Chrome hoặc Safari.'
       );
       return;
     }
 
-    if (typeof Html5Qrcode === 'undefined') {
-      setMessage(
-        'Không tải được thư viện quét QR. Kiểm tra Internet rồi tải lại trang.'
-      );
-      return;
-    }
+    isStarting = true;
 
     const startBtn = document.getElementById('startBtn');
-    isStarting = true;
     startBtn.disabled = true;
-    setMessage('Đang mở camera...');
 
     try {
+      await loadQrLibrary();
+
       if (!scanner) {
         scanner = new Html5Qrcode('reader');
       }
+
+      setMessage('Đang mở camera...');
 
       await scanner.start(
         { facingMode: 'environment' },
@@ -147,14 +226,17 @@
 
           document.getElementById('result').textContent = scannedText;
           document.getElementById('continueBtn').disabled = false;
-          setMessage('Đã quét QR thành công. Nhấn Tiếp tục đến FQC record.');
+
+          setMessage(
+            'Đã quét QR thành công. Nhấn Tiếp tục đến FQC record.'
+          );
 
           try {
             await scanner.stop();
           } catch (e) {}
 
           isStarting = false;
-          startBtn.disabled = false;
+          startBtn.disabled = true;
         },
         () => {}
       );
@@ -165,8 +247,8 @@
       startBtn.disabled = false;
 
       setMessage(
-        'Không mở được camera: ' + (e.message || String(e)) +
-        '. Hãy cấp quyền camera hoặc nhập mã thủ công.'
+        'Lỗi: ' + (e.message || String(e)) +
+        ' Nếu lỗi thư viện, hãy đổi mạng Wi-Fi/4G rồi tải lại trang.'
       );
     }
   }
@@ -192,10 +274,14 @@
       return;
     }
 
+    if (!FQC_APP_URL.startsWith('https://')) {
+      setMessage('URL FQC record không hợp lệ.');
+      return;
+    }
+
     const target = FQC_APP_URL + '?qr=' +
       encodeURIComponent(scannedText);
 
-    // Mở Apps Script ở tab hiện tại của trang GitHub.
     window.location.href = target;
   }
 </script>
